@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dividend Viewer</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <style>
+        body { font-family: sans-serif; margin: 2rem; }
+        textarea { width: 300px; height: 100px; }
+        table { border-collapse: collapse; margin-top: 2rem; }
+        th, td { border: 1px solid #ccc; padding: 4px 8px; }
+        th { cursor: pointer; }
+        .increase { background: #d4edda; }
+        .cut { background: #f8d7da; }
+        .suspension { background: #e2e3e5; }
+    </style>
+</head>
+<body>
+<h1>Dividend Viewer</h1>
+<textarea id="tickers" placeholder="Enter tickers separated by space or comma"></textarea>
+<br>
+<button id="load">Load</button>
+<canvas id="chart" width="800" height="400"></canvas>
+<table id="summary">
+    <thead>
+    <tr>
+        <th data-key="ticker">Ticker</th>
+        <th data-key="date">Last Date</th>
+        <th data-key="last">Last Dividend</th>
+        <th data-key="previous">Previous Dividend</th>
+        <th data-key="status">Status</th>
+    </tr>
+    </thead>
+    <tbody></tbody>
+</table>
+<script>
+const ctx = document.getElementById('chart').getContext('2d');
+let chart;
+
+function renderChart(series) {
+    const datasets = series.map(s => ({
+        label: s.ticker,
+        data: s.data.map(p => ({x: p.date, y: p.amount})),
+        fill: false
+    }));
+    if (chart) chart.destroy();
+    chart = new Chart(ctx, {
+        type: 'line',
+        data: { datasets },
+        options: {
+            parsing: false,
+            scales: { x: { type: 'time', time: { unit: 'month' } } }
+        }
+    });
+}
+
+function renderTable(changes) {
+    const tbody = document.querySelector('#summary tbody');
+    tbody.innerHTML = '';
+    changes.forEach(c => {
+        const tr = document.createElement('tr');
+        tr.className = c.status;
+        tr.innerHTML = `
+            <td>${c.ticker}</td>
+            <td>${c.date || ''}</td>
+            <td>${c.last ?? ''}</td>
+            <td>${c.previous ?? ''}</td>
+            <td>${c.status}</td>`;
+        tbody.appendChild(tr);
+    });
+}
+
+function sortTable(key) {
+    const rows = Array.from(document.querySelector('#summary tbody').children);
+    const asc = sortTable.asc = sortTable.asc === key ? !sortTable.asc : true;
+    rows.sort((a,b) => {
+        const va = a.children[Array.from(a.parentNode.parentNode.children[0].children).findIndex(th=>th.dataset.key==key)].innerText;
+        const vb = b.children[Array.from(b.parentNode.parentNode.children[0].children).findIndex(th=>th.dataset.key==key)].innerText;
+        return asc ? va.localeCompare(vb, undefined, {numeric:true}) : vb.localeCompare(va, undefined, {numeric:true});
+    });
+    const tbody = document.querySelector('#summary tbody');
+    rows.forEach(r => tbody.appendChild(r));
+}
+
+document.getElementById('load').addEventListener('click', () => {
+    fetch('/dividends', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tickers: document.getElementById('tickers').value })
+    }).then(r => r.json()).then(data => {
+        renderChart(data.series);
+        renderTable(data.changes);
+    });
+});
+
+document.querySelectorAll('#summary th').forEach(th => {
+    th.addEventListener('click', () => sortTable(th.dataset.key));
+});
+</script>
+</body>
+</html>
